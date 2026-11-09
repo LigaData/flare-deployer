@@ -1,0 +1,9 @@
+Data Flare deployer for Google Cloud Marketplace
+Copyright 2026 LigaData, Inc.
+
+This deployment package (Helm chart, deployer schema, scripts and documentation) is licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+Data Flare itself is commercial software. Use of the Data Flare container images installed by this
+package is subject to the LigaData End User License Agreement supplied with your licence, not to the
+Apache License.

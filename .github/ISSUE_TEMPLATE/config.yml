@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Data Flare support
+    url: mailto:support@ligadata.com
+    about: Licensed customers, contact LigaData support for deployment or product issues.

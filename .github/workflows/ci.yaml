@@ -1,0 +1,58 @@
+name: Lint and validate
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  lint-and-template:
+    name: lint-and-template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Helm lint
+        run: helm lint deployer/chart/data-flare
+      - name: Render the chart (default, no environment, ingress)
+        run: |
+          set -e
+          helm template ci deployer/chart/data-flare -n ci > /tmp/default.yaml
+          helm template ci deployer/chart/data-flare -n ci --set environment.enabled=false > /tmp/noenv.yaml
+          helm template ci deployer/chart/data-flare -n ci --set ui.ingress.enabled=true --set ui.ingress.host=flare.example.com --set ui.ingress.gke.managedCertificate=true > /tmp/ingress.yaml
+      - name: Validate manifests against Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          for f in /tmp/default.yaml /tmp/noenv.yaml /tmp/ingress.yaml; do
+            ./kubeconform -strict -ignore-missing-schemas -kubernetes-version 1.30.0 -summary "$f"
+          done
+      - name: Schema, versions and chart naming rules
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml, re, sys
+          schema = yaml.safe_load(open('deployer/schema.yaml'))
+          chart = yaml.safe_load(open('deployer/chart/data-flare/Chart.yaml'))
+          pv = str(schema['x-google-marketplace']['publishedVersion']); av = str(chart['appVersion'])
+          assert pv == av, f"publishedVersion {pv} != Chart appVersion {av}"
+          assert re.fullmatch(r"\d+\.\d+\.\d+", pv), "publishedVersion must be MAJOR.MINOR.PATCH"
+          values = yaml.safe_load(open('deployer/chart/data-flare/values.yaml'))
+          declared = set(schema['x-google-marketplace']['images'])
+          assert declared == set(values['images']), f"schema images {declared} != values images {set(values['images'])}"
+          for p in [f"images.{k}.{f}" for k in declared for f in ('repository', 'tag')]:
+              img = schema['x-google-marketplace']['images'][p.split('.')[1]]['properties']
+              assert p in img, f"{p} missing from schema image properties"
+          docs = [d for d in yaml.safe_load_all(open('/tmp/default.yaml')) if d]
+          bad = [d['metadata']['name'] for d in docs if not d['metadata']['name'].startswith('ci')]
+          assert not bad, f"resources without the instance-name prefix: {bad}"
+          kinds = {d['kind'] for d in docs}
+          assert 'Application' in kinds, "Application resource missing"
+          forbidden = kinds & {'ServiceAccount', 'Role', 'RoleBinding', 'ClusterRole', 'ClusterRoleBinding', 'Namespace'}
+          assert not forbidden, f"deployer charts must not create {forbidden}"
+          print(f"ok: {len(docs)} resources, version {pv}")
+          PY
+      - name: Compile the setup script
+        run: python3 -m py_compile deployer/chart/data-flare/files/setup.py
