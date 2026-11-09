@@ -1,0 +1,83 @@
+{{- if .Values.database.internal }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-postgres-init
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+data:
+  10-schema.sql: |
+    CREATE SCHEMA IF NOT EXISTS ui AUTHORIZATION {{ .Values.database.user }};
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-postgres-data
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.database.internalStorageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.database.internalSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-postgres
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-postgres
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-postgres
+{{ include "flare.podLabels" . | indent 8 }}
+    spec:
+      serviceAccountName: {{ include "flare.sa" . }}
+      # run as the postgres user directly (the image's entrypoint then never calls gosu)
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+{{ include "flare.pullSecrets" . | indent 6 }}
+{{ include "flare.scheduling" . | indent 6 }}
+      containers:
+      - name: postgres
+        image: {{ include "flare.image" (dict "Values" .Values "name" "postgres") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.database.name | quote }}
+        - name: POSTGRES_USER
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DBuser}}
+        - name: POSTGRES_PASSWORD
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DBpwd}}
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - {containerPort: 5432}
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", {{ .Values.database.user | quote }}]
+          periodSeconds: 10
+        resources:
+{{ toYaml .Values.resources.postgres | indent 10 }}
+        volumeMounts:
+        - {name: data, mountPath: /var/lib/postgresql/data}
+        - {name: init, mountPath: /docker-entrypoint-initdb.d}
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ .Release.Name }}-postgres-data
+      - name: init
+        configMap:
+          name: {{ .Release.Name }}-postgres-init
+{{- end }}

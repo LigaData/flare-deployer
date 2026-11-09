@@ -1,0 +1,9 @@
+# Parameters mpdev verify uses when it installs the app in a throwaway namespace. Images and the
+# generated values come from the main schema; this file only fixes what a test needs.
+properties:
+  storage.className:
+    type: string
+    default: standard-rwx
+  users.pipelineUser.email:
+    type: string
+    default: dataeng1@example.com

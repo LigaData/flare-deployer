@@ -1,0 +1,4 @@
+Data Flare is commercial software licensed by LigaData, Inc. Use of the container images and this
+deployment package is subject to the LigaData End User License Agreement supplied with your licence.
+The deployment package itself (Helm chart, Terraform module, scripts) is provided under the
+Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0

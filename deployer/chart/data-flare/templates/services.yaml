@@ -1,0 +1,62 @@
+{{- /* Control-plane services. Engine services are rendered with the engines (engine.yaml, environment.yaml). */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-flaredis
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    service: {{ .Release.Name }}-flaredis
+  ports:
+  - {name: main, port: 10002, targetPort: 10001}
+  - {name: main-alt, port: 10001, targetPort: 10001}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Release.Name }}-redis
+  ports:
+  - {name: redis-port, port: 6379, targetPort: 6379}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-flare4-ui
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+  annotations:
+    {{- if and .Values.ui.ingress.enabled (eq .Values.ui.ingress.className "gce") }}
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "{{ .Release.Name }}-ui"}'
+    {{- end }}
+    {{- with .Values.ui.service.annotations }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.ui.service.type }}
+  selector:
+    app: {{ .Release.Name }}-flare4-ui
+  ports:
+  - {name: http, port: {{ .Values.ui.service.port }}, targetPort: 8081}
+{{- if .Values.database.internal }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-postgres
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-postgres
+  ports:
+  - {port: 5432, targetPort: 5432}
+{{- end }}

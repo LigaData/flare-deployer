@@ -1,0 +1,191 @@
+# Deployer schema (v2) for Data Flare. Drives the console deployment form and tells Marketplace which
+# chart values receive the image locations it publishes. Chart value names are the keys below.
+x-google-marketplace:
+  schemaVersion: v2
+  applicationApiVersion: v1beta1
+  publishedVersion: "4.1.0"
+  publishedVersionMetadata:
+    releaseNote: >-
+      Data Flare 4.1: control plane (web UI, REST API, environment service), engine master, worker
+      and indexer, a ready-to-use "dev" environment, Redis and optional in-cluster PostgreSQL.
+      First release on Google Cloud Marketplace.
+    releaseTypes:
+      - Feature
+    recommended: true
+
+  # every image the chart uses; Marketplace substitutes its published copies at deploy time
+  images:
+    dismain:
+      properties:
+        images.dismain.repository: {type: REPO_WITH_REGISTRY}
+        images.dismain.tag: {type: TAG}
+    disworker:
+      properties:
+        images.disworker.repository: {type: REPO_WITH_REGISTRY}
+        images.disworker.tag: {type: TAG}
+    flare4ui:
+      properties:
+        images.flare4ui.repository: {type: REPO_WITH_REGISTRY}
+        images.flare4ui.tag: {type: TAG}
+    seed:
+      properties:
+        images.seed.repository: {type: REPO_WITH_REGISTRY}
+        images.seed.tag: {type: TAG}
+    redis:
+      properties:
+        images.redis.repository: {type: REPO_WITH_REGISTRY}
+        images.redis.tag: {type: TAG}
+    postgres:
+      properties:
+        images.postgres.repository: {type: REPO_WITH_REGISTRY}
+        images.postgres.tag: {type: TAG}
+
+  clusterConstraints:
+    k8sVersion: ">=1.27"
+    resources:
+      - replicas: 1
+        requests: {cpu: 2500m, memory: 11Gi}    # control plane (master, worker, indexer, UI, env service, Redis, Postgres)
+      - replicas: 1
+        requests: {cpu: 2000m, memory: 9Gi}     # the "dev" environment (master, worker, indexer)
+
+properties:
+  name:
+    type: string
+    x-google-marketplace:
+      type: NAME
+  namespace:
+    type: string
+    x-google-marketplace:
+      type: NAMESPACE
+
+  # engine pods run as this account; it needs to read namespace metadata (licence binding)
+  serviceAccount:
+    type: string
+    title: Service account for the Data Flare pods
+    x-google-marketplace:
+      type: SERVICE_ACCOUNT
+      serviceAccount:
+        description: >-
+          Used by the engine master, workers, indexers and the environment service. Reads namespace
+          metadata because the licence is bound to the cluster's kube-system namespace UID.
+        roles:
+          - type: ClusterRole
+            rulesType: CUSTOM
+            rules:
+              - apiGroups: [""]
+                resources: ["namespaces"]
+                verbs: ["get", "list"]
+
+  storage.className:
+    type: string
+    title: Storage class for the shared volume (ReadWriteMany)
+    description: >-
+      Data Flare shares configuration and pipeline data between its pods, so this must be a
+      ReadWriteMany class: on GKE a Filestore class (standard-rwx, premium-rwx, enterprise-rwx;
+      requires the Filestore CSI driver) or an NFS provisioner class. Block-storage classes
+      (standard-rwo, premium-rwo) will not work.
+    default: standard-rwx
+  storage.size:
+    type: string
+    title: Size of the shared volume
+    description: Filestore Basic shares start at 1Ti.
+    default: 1Ti
+
+  database.internal:
+    type: boolean
+    title: Run PostgreSQL inside the cluster
+    description: Uncheck to use your own PostgreSQL (for example Cloud SQL) and fill in the host below.
+    default: true
+  database.host:
+    type: string
+    title: External PostgreSQL host (only when not running PostgreSQL inside the cluster)
+    default: ""
+  database.name:
+    type: string
+    title: Database name
+    default: flare4
+  database.user:
+    type: string
+    title: Database user
+    default: flare4
+  database.password:
+    type: string
+    title: Database password
+    description: Generated for the in-cluster database; enter your own when using an external one.
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword:
+        length: 24
+        includeSymbols: false
+        base64: false
+
+  secrets.diSecret:
+    type: string
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword: {length: 32, includeSymbols: false, base64: false}
+  secrets.sapiSecKey:
+    type: string
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword: {length: 32, includeSymbols: false, base64: false}
+  environments.dev.secret:
+    type: string
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword: {length: 32, includeSymbols: false, base64: false}
+
+  ui.adminPassword:
+    type: string
+    title: Web UI administrator password (admin@ld.com)
+    description: Generated; read it later from Secret <name>-ligadata-ui-users. Must contain upper and lower case letters, a digit and a special character.
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword: {length: 16, includeSymbols: true, base64: false}
+  users.pipelineUser.email:
+    type: string
+    title: Pipeline user e-mail (role DataEngL1, created after install)
+    default: dataeng1@example.com
+  users.pipelineUser.password:
+    type: string
+    title: Pipeline user password
+    x-google-marketplace:
+      type: GENERATED_PASSWORD
+      generatedPassword: {length: 16, includeSymbols: true, base64: false}
+
+  ui.ingress.enabled:
+    type: boolean
+    title: Expose the web UI through a GKE external HTTP(S) load balancer
+    description: Leave off to keep the UI internal (kubectl port-forward). Add a DNS name below for HTTPS.
+    default: false
+  ui.ingress.host:
+    type: string
+    title: DNS name for the web UI (optional; enables a Google-managed certificate)
+    default: ""
+
+  license.p7sBase64:
+    type: string
+    title: Licence file (base64 of license.p7s), optional
+    description: Leave empty to install the licence later; pipelines stay blocked until then.
+    default: ""
+    x-google-marketplace:
+      type: MASKED_FIELD
+
+  timezone:
+    type: string
+    title: Time zone
+    default: UTC
+
+required:
+  - name
+  - namespace
+  - serviceAccount
+  - storage.className
+
+form:
+  - widget: help
+    description: >-
+      <p>Data Flare needs a <b>ReadWriteMany</b> storage class: enable the Filestore CSI driver on the
+      cluster (class <i>standard-rwx</i>) or install an NFS provisioner. After deployment, follow the
+      <a href="https://www.ligadata.com/docs/data-flare-gke">user guide</a> to read the generated
+      passwords, open the web UI and install your licence.</p>

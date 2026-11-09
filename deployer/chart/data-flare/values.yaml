@@ -1,0 +1,175 @@
+# Data Flare Helm chart values: Google Cloud Marketplace *Kubernetes app* (deployer) variant.
+# One release = one namespace holding the control plane (web UI and API, environment service,
+# built-in engine, Redis, optional Postgres) plus one ready-to-use engine environment. Every
+# resource is named <release>-<component>, as the Marketplace deployer requires. Secrets and the
+# service account are supplied by the deployer from the schema (no lookup, no RBAC in the chart).
+
+# ServiceAccount the pods run as. Marketplace creates it from the schema's SERVICE_ACCOUNT property
+# (with a ClusterRole that may read namespaces, for the licence binding). Empty = "default".
+serviceAccount: ""
+
+# Container images. Every image reference is built from repository:tag so that Google Cloud
+# Marketplace can rewrite them to its own registry at publish time. Do not hard-code images in
+# templates. The repository values below are replaced by scripts/30-push-chart.sh from marketplace.env.
+images:
+  dismain:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/dismain
+    tag: "4.1"
+  disworker:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/disworker
+    tag: "4.1"
+  flare4ui:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/flare4ui
+    tag: "4.1"
+  seed:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/seed
+    tag: "4.1"
+  redis:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/redis
+    tag: "4.1"
+  postgres:
+    repository: us-docker.pkg.dev/PARTNER_PROJECT/SOLUTION/postgres
+    tag: "4.1"
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Google Cloud Marketplace identifiers: the consumption tracking label (goog-partner-solution, set by
+# the build script from marketplace.env) and the deploy-info annotation on the Application resource.
+marketplace:
+  solutionUrn: ""
+  partnerId: ligadata-public      # Marketplace partner (public project) identifier
+  productId: ligadata-flare       # Producer Portal product ID of the Kubernetes-app listing
+
+timezone: UTC
+
+# Shared storage: one ReadWriteMany volume holds every Flare directory (config, libraries, landing
+# zone, logs, indexer data, UI storage, Redis). On GKE the standard-rwx class provisions a Filestore
+# share (Basic HDD, 1 TiB minimum); an existing RWX claim can be used instead.
+storage:
+  className: standard-rwx
+  size: 1Ti
+
+# Metadata database (pipelines, users, roles, environments, licences).
+# internal=true runs Postgres 16 in the namespace on a ReadWriteOnce disk.
+# internal=false points the UI at an existing PostgreSQL (for example Cloud SQL, private IP).
+database:
+  internal: true
+  host: ""
+  port: 5432
+  name: flare4
+  user: flare4
+  password: ""            # supplied by the deployer (generated) or on the command line; random if empty
+  internalStorageClass: standard-rwo
+  internalSize: 20Gi
+
+# Shared application secrets (secret ligadata-app). Empty values are generated at install and
+# kept across upgrades.
+secrets:
+  diSecret: ""            # engine API secret (DIExecServerManager.secretKey)
+  sapiSecKey: ""          # UI session signing key
+  # credentials the environment service uses when it creates image pull secrets for new
+  # environments; not needed for Marketplace images
+  repoUser: none
+  repoPassword: none
+  repoEmail: none@example.com
+
+# Licence issued by LigaData for this cluster (bound to the kube-system namespace UID).
+# p7sBase64: base64 of license.p7s. Empty: the platform starts and pipelines stay blocked until a
+# licence is installed (see the user guide).
+license:
+  p7sBase64: ""
+  trustedRootFingerprint: ""
+
+# Web UI exposure. Path /dataflare. Published on port 80 (container listens on 8081): many corporate
+# networks block outbound connections to non-standard ports such as 8081.
+ui:
+  # Administrator account the UI seeds on first start (fresh database). The password comes from the
+  # deployer (generated) and is stored in Secret <release>-ligadata-ui-users (key admin).
+  # A database that already holds users keeps its existing administrator password.
+  adminEmail: admin@ld.com
+  adminPassword: ""
+  # How the web UI is reached. Default: ClusterIP (internal only). Options:
+  #   kubectl -n <ns> port-forward svc/flare4-ui 8080:80   -> http://localhost:8080/dataflare/
+  #   ui.ingress.enabled=true  -> GKE external HTTP(S) load balancer (recommended for shared use;
+  #                               give a host and enable the managed certificate for HTTPS)
+  #   ui.service.type=LoadBalancer -> plain HTTP on a public IP (demos only)
+  healthPath: /dataflare/ui/   # path that answers 200, used by probes and the GKE load balancer health check
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  ingress:
+    enabled: false
+    className: gce
+    host: ""                  # DNS name pointing at the Ingress IP; required for a certificate
+    annotations: {}
+    tls: []                   # or use the managed certificate below
+    gke:
+      staticIpName: ""        # name of a reserved global static IP (kubernetes.io/ingress.global-static-ip-name)
+      managedCertificate: false   # Google-managed certificate for .host; forces HTTPS when enabled
+
+# The engine environment installed with the control plane, in the same namespace, named
+# <release>-<name>-<component>. Pipelines cannot run in the built-in "Main Env"; they are deployed
+# here. The setup job registers it in the web UI as an external environment of the given type
+# (Dev, Stg or Prod). "name": lowercase letters, digits, underscores. secret = its engine API key
+# (supplied by the deployer; random if empty). More environments = further deployments of this app.
+environment:
+  enabled: true
+  name: dev
+  type: Dev
+  secret: ""
+
+# Users the setup job creates in the web UI after install. The administrator (admin@ld.com) is
+# seeded by the UI itself; its initial password is in the user guide. The pipeline user gets the
+# DataEngL1 role (design, import, deploy and run pipelines), which the administrator role lacks.
+users:
+  pipelineUser:
+    enabled: true
+    userName: dataeng1
+    firstName: Data
+    lastName: Engineer
+    email: dataeng1@example.com
+    password: ""            # supplied by the deployer (generated); stored in Secret <release>-ligadata-ui-users.
+                            # UI policy: at least one upper-case letter, lower-case letter, digit and
+                            # special character, no whitespace.
+
+# Hadoop user name presented to HDFS origins and destinations
+hadoopUserName: hdfs
+
+worker:
+  replicas: 1
+
+resources:
+  redis:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  flaredis:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "2", memory: 3Gi}
+  flaredriver:
+    requests: {cpu: 500m, memory: 2Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  disworker:
+    requests: {cpu: "1", memory: 4Gi}
+    limits: {cpu: "4", memory: 8Gi}
+  disindexer:
+    requests: {cpu: 500m, memory: 3Gi}
+    limits: {cpu: "3", memory: 7Gi}
+  ui:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "1", memory: 3Gi}
+  postgres:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  seed:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+javaOpts:
+  flaredis: "-Xmx2G -Xms512m -XX:+UseG1GC -XX:+ExplicitGCInvokesConcurrent -XX:+UseGCOverheadLimit"
+  flaredriver: "-Xmx3G -Xms1G -XX:+UseG1GC -XX:+ExplicitGCInvokesConcurrent -XX:+UseGCOverheadLimit -XX:+CrashOnOutOfMemoryError -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapWastePercent=1"
+  disworker: "-Xmx6G -Xms2G -XX:+UseG1GC -XX:+ExplicitGCInvokesConcurrent -XX:+UseGCOverheadLimit -XX:+CrashOnOutOfMemoryError -XX:+ExitOnOutOfMemoryError -Djava.library.path=/opt/Flare4/DI/lib -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/Flare4/DI/logs/java_heapdump.hprof -XX:ErrorFile=/opt/Flare4/DI/logs/hs_err_pid%p.log -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapWastePercent=1"
+  disindexer: "-Xmx4G -Xms1G -XX:+UseG1GC -XX:+ExplicitGCInvokesConcurrent -XX:+UseGCOverheadLimit -XX:+CrashOnOutOfMemoryError -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -Djava.library.path=/opt/Flare4/DI/lib"
+
+nodeSelector: {}
+tolerations: []

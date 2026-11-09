@@ -1,0 +1,83 @@
+{{- if .Values.ui.ingress.enabled }}
+{{- $gke := eq .Values.ui.ingress.className "gce" }}
+{{- $cert := and $gke .Values.ui.ingress.gke.managedCertificate .Values.ui.ingress.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+  annotations:
+    {{- if $gke }}
+    kubernetes.io/ingress.class: gce
+    {{- with .Values.ui.ingress.gke.staticIpName }}
+    kubernetes.io/ingress.global-static-ip-name: {{ . | quote }}
+    {{- end }}
+    {{- if $cert }}
+    networking.gke.io/managed-certificates: {{ .Release.Name }}-ui
+    networking.gke.io/v1beta1.FrontendConfig: {{ .Release.Name }}-ui
+    {{- end }}
+    {{- end }}
+    {{- with .Values.ui.ingress.annotations }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  {{- if not $gke }}
+  ingressClassName: {{ .Values.ui.ingress.className }}
+  {{- end }}
+  {{- with .Values.ui.ingress.tls }}
+  tls:
+{{ toYaml . | indent 2 }}
+  {{- end }}
+  rules:
+  - {{- if .Values.ui.ingress.host }}
+    host: {{ .Values.ui.ingress.host | quote }}
+    {{- end }}
+    http:
+      paths:
+      - path: /dataflare
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-flare4-ui
+            port:
+              number: {{ .Values.ui.service.port }}
+{{- if $gke }}
+---
+# health check and timeouts for the GKE load balancer backend (the UI answers 200 on /dataflare/ui/)
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  healthCheck:
+    type: HTTP
+    port: 8081
+    requestPath: {{ .Values.ui.healthPath | quote }}
+  timeoutSec: 300
+{{- end }}
+{{- if $cert }}
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  domains:
+  - {{ .Values.ui.ingress.host | quote }}
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  redirectToHttps:
+    enabled: true
+{{- end }}
+{{- end }}

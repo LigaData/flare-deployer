@@ -1,0 +1,30 @@
+{{- /* Verification pod for `mpdev verify`: Marketplace runs pods carrying the verification
+       annotation after install and expects exit code 0. Checks that the UI answers, that the
+       environment service answers and that the engine master of the dev environment is up. */ -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-tester
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+  annotations:
+    marketplace.cloud.google.com/verification: test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: tester
+    image: {{ include "flare.image" (dict "Values" .Values "name" "dismain") }}
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      set -e
+      wait() { n=0; until curl -s -m 5 -o /dev/null "$1"; do n=$((n+1)); [ $n -gt 120 ] && { echo "timeout: $1"; exit 1; }; sleep 10; done; echo "ok: $1"; }
+      wait http://{{ .Release.Name }}-flare4-ui.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ui.service.port }}/dataflare/ui/
+      wait http://{{ .Release.Name }}-flaredis.{{ .Release.Namespace }}.svc.cluster.local:10002/DIEnvService/
+      {{- if .Values.environment.enabled }}
+      wait http://{{ .Release.Name }}-{{ .Values.environment.name }}-flaredriver.{{ .Release.Namespace }}.svc.cluster.local:10001/DIEnvService/
+      {{- end }}
+      echo "all checks passed"
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 200m, memory: 128Mi}

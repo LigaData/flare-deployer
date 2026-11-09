@@ -1,0 +1,8 @@
+{{- /* the control plane's built-in engine ("Main Env"): <release>-flaredriver, <release>-disworker, <release>-disindexer-0 */ -}}
+{{- $ctx := dict "root" . "p" (printf "%s-" .Release.Name) "mode" "control" "env" "" "pvcName" (printf "%s-flare-data" .Release.Name) "secretName" (printf "%s-ligadata-app" .Release.Name) }}
+{{- include "flare.ctx" $ctx }}
+{{ include "flare.engine" $ctx }}
+---
+{{ include "flare.engineServices" $ctx }}
+---
+{{ include "flare.pvcResource" $ctx }}

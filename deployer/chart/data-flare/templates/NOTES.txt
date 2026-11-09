@@ -1,0 +1,6 @@
+Data Flare {{ .Chart.AppVersion }} installed as "{{ .Release.Name }}" in namespace {{ .Release.Namespace }}.
+See the Application resource for status and notes:
+  kubectl -n {{ .Release.Namespace }} describe application {{ .Release.Name }}
+Web UI (internal): kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-flare4-ui 8080:{{ .Values.ui.service.port }}  ->  http://localhost:8080/dataflare/
+Passwords: Secret {{ .Release.Name }}-ligadata-ui-users (keys admin, pipelineUser).
+Setup job: kubectl -n {{ .Release.Namespace }} logs job/{{ .Release.Name }}-setup

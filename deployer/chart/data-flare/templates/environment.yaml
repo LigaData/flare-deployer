@@ -1,0 +1,27 @@
+{{- /* The ready-to-use Flare environment (default "dev"): its own engine master, worker, indexer and
+       volume in the same namespace, named <release>-<env>-<component>. Pipelines run here; the
+       setup job registers it in the web UI as an external environment. */ -}}
+{{- if .Values.environment.enabled }}
+{{- $e := .Values.environment }}
+{{- $name := required "environment.name is required" $e.name }}
+{{- $ctx := dict "root" . "p" (printf "%s-%s-" .Release.Name $name) "mode" "environment" "env" $name "pvcName" (printf "%s-%s-flare-data" .Release.Name $name) "secretName" (printf "%s-%s-ligadata-app" .Release.Name $name) }}
+{{- include "flare.ctx" $ctx }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-{{ $name }}-ligadata-app
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+type: Opaque
+data:
+  DI_secretKey: {{ $e.secret | default (randAlphaNum 32) | b64enc }}
+  repo_user: {{ .Values.secrets.repoUser | b64enc }}
+  repo_pwd: {{ .Values.secrets.repoPassword | b64enc }}
+  repo_mail: {{ .Values.secrets.repoEmail | b64enc }}
+---
+{{ include "flare.pvcResource" $ctx }}
+---
+{{ include "flare.engineServices" $ctx }}
+---
+{{ include "flare.engine" $ctx }}
+{{- end }}

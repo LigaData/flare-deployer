@@ -1,0 +1,73 @@
+{{- /* Post-install job: waits for the UI and the environment's master, registers the environment in
+       the web UI and creates the pipeline user. A plain Job (the Marketplace deployer applies all
+       resources at once); the script polls until the services answer and is idempotent. */ -}}
+{{- $envs := list }}
+{{- if .Values.environment.enabled }}
+{{- $envs = append $envs (dict "name" .Values.environment.name "type" (.Values.environment.type | default "Dev") "url" (printf "http://%s-%s-flaredriver.%s.svc.cluster.local:10001/DIEnvService" .Release.Name .Values.environment.name .Release.Namespace)) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-setup
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+data:
+  setup.py: |
+{{ .Files.Get "files/setup.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-setup
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-setup
+{{ include "flare.podLabels" . | indent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "flare.sa" . }}
+{{ include "flare.pullSecrets" . | indent 6 }}
+{{ include "flare.scheduling" . | indent 6 }}
+      containers:
+      - name: setup
+        image: {{ include "flare.image" (dict "Values" .Values "name" "dismain") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command: ["python3", "/setup/setup.py"]
+        env:
+        - name: UI_URL
+          value: "http://{{ .Release.Name }}-flare4-ui.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ui.service.port }}/dataflare"
+        - name: ADMIN_EMAIL
+          value: {{ .Values.ui.adminEmail | quote }}
+        - name: ENVIRONMENTS
+          value: {{ $envs | toJson | quote }}
+        - name: PIPELINE_USER
+          value: {{ if .Values.users.pipelineUser.enabled }}{{ dict "userName" (.Values.users.pipelineUser.userName | default (splitList "@" .Values.users.pipelineUser.email | first)) "firstName" .Values.users.pipelineUser.firstName "lastName" .Values.users.pipelineUser.lastName "email" .Values.users.pipelineUser.email "roleName" "DataEngL1" | toJson | quote }}{{ else }}"null"{{ end }}
+        - name: WAIT_SECONDS
+          value: "3000"
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+        volumeMounts:
+        - {name: script, mountPath: /setup, readOnly: true}
+        - {name: uisecrets, mountPath: /uisecrets, readOnly: true}
+        {{- if .Values.environment.enabled }}
+        - {name: envsecrets, mountPath: /envsecrets, readOnly: true}
+        {{- end }}
+      volumes:
+      - name: script
+        configMap: {name: {{ .Release.Name }}-setup}
+      - name: uisecrets
+        secret: {secretName: {{ .Release.Name }}-ligadata-ui-users}
+      {{- if .Values.environment.enabled }}
+      - name: envsecrets
+        secret:
+          secretName: {{ .Release.Name }}-{{ .Values.environment.name }}-ligadata-app
+          items:
+          - {key: DI_secretKey, path: {{ .Values.environment.name }}}
+      {{- end }}

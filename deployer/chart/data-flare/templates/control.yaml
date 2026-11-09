@@ -1,0 +1,190 @@
+{{- /* Control-plane workloads: Redis, the environment service (flaredis) and the web UI / API. */ -}}
+{{- $ctx := dict "root" . "p" (printf "%s-" .Release.Name) "mode" "control" "env" "" "pvcName" (printf "%s-flare-data" .Release.Name) "secretName" (printf "%s-ligadata-app" .Release.Name) }}
+{{- include "flare.ctx" $ctx }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-redis
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-redis
+{{ include "flare.podLabels" . | indent 8 }}
+    spec:
+      serviceAccountName: {{ include "flare.sa" . }}
+      terminationGracePeriodSeconds: 30
+{{ include "flare.pullSecrets" . | indent 6 }}
+{{ include "flare.scheduling" . | indent 6 }}
+      initContainers:
+{{ include "flare.seedInit" $ctx | indent 6 }}
+      containers:
+      - name: redis
+        image: {{ include "flare.image" (dict "Values" .Values "name" "redis") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        args: ["--appendonly", "yes"]
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        ports:
+        - {containerPort: 6379, name: redis}
+        resources:
+{{ toYaml .Values.resources.redis | indent 10 }}
+        volumeMounts:
+        - {name: flare-data, mountPath: /data, subPath: redis/discache}
+      volumes:
+{{ include "flare.sharedVolumes" $ctx | indent 6 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-flaredis
+  labels:
+    service: {{ .Release.Name }}-flaredis
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: {{ .Release.Name }}-flaredis
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        service: {{ .Release.Name }}-flaredis
+{{ include "flare.podLabels" . | indent 8 }}
+    spec:
+      serviceAccountName: {{ include "flare.sa" . }}
+      securityContext:
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+{{ include "flare.pullSecrets" . | indent 6 }}
+{{ include "flare.scheduling" . | indent 6 }}
+      initContainers:
+{{ include "flare.seedInit" $ctx | indent 6 }}
+      containers:
+      - name: flaredis
+        image: {{ include "flare.image" (dict "Values" .Values "name" "dismain") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        env:
+        - name: ENV_RUNMODE
+          value: service
+        - name: ENV_LIBPATH
+          value: /opt/Flare4/DI/ExtLib
+        - name: TZ
+          value: {{ .Values.timezone | quote }}
+        - name: REDIS_SERVICE_HOST
+          value: {{ .Release.Name }}-redis
+        - name: ENV_REPO_USER
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: repo_user}}
+        - name: ENV_REPO_PWD
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: repo_pwd}}
+        - name: ENV_REPO_EMAIL
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: repo_mail}}
+        - name: DIExecServerManager.secretKey
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DI_secretKey}}
+        - name: LIGADATA_JAVA_OPTS
+          value: {{ .Values.javaOpts.flaredis | quote }}
+{{ include "flare.postStart" . | indent 8 }}
+        ports:
+        - {containerPort: 10001}
+        resources:
+{{ toYaml .Values.resources.flaredis | indent 10 }}
+        volumeMounts:
+        - {name: flare-data, mountPath: /opt/Flare4/DI/ExtLib, subPath: extlibs}
+        - {name: flare-data, mountPath: /opt/Flare4/DI/EnvBasePath, subPath: mainenv/DISMBasePath}
+        - {name: flare-data, mountPath: /opt/Flare4/DI/config, subPath: mainenv/config}
+        - {name: flare-data, mountPath: /opt/Flare4/DI/logs, subPath: logs/main}
+      volumes:
+{{ include "flare.sharedVolumes" $ctx | indent 6 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-flare-deployment-ui
+  labels:
+    app: {{ .Release.Name }}-flare4-ui
+{{ include "flare.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-flare4-ui
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-flare4-ui
+{{ include "flare.podLabels" . | indent 8 }}
+    spec:
+      serviceAccountName: {{ include "flare.sa" . }}
+      securityContext:
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+{{ include "flare.pullSecrets" . | indent 6 }}
+{{ include "flare.scheduling" . | indent 6 }}
+      initContainers:
+{{ include "flare.seedInit" $ctx | indent 6 }}
+      # the UI exits if the environment service is not answering at start-up; wait for it
+      - name: wait-for-env
+        image: {{ include "flare.image" (dict "Values" .Values "name" "seed") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command: ["/bin/sh", "-c", "until nc -z {{ .Release.Name }}-flaredis 10002; do echo waiting for the environment service; sleep 3; done"]
+        resources:
+          requests: {cpu: 10m, memory: 16Mi}
+          limits: {cpu: 100m, memory: 32Mi}
+      containers:
+      - name: frontend
+        image: {{ include "flare.image" (dict "Values" .Values "name" "flare4ui") }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        env:
+        - name: ADD_MISSING_PROPS
+          value: "true"
+        - name: TZ
+          value: {{ .Values.timezone | quote }}
+        - name: SAPI_HIBERNATE_CONNECTION_URL
+          value: "jdbc:postgresql://{{ include "flare.dbHost" . }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+        - name: SAPI_HIBERNATE_CONNECTION_USERNAME
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DBuser}}
+        - name: SAPI_HIBERNATE_CONNECTION_PASSWORD
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DBpwd}}
+        - name: SAPI_SEC_KEY
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: SAPI_SEC_KEY}}
+        - name: SAPI_MAIN_ENV_ADDRESS
+          value: "http://{{ .Release.Name }}-flaredis.{{ .Release.Namespace }}.svc.cluster.local:10002/DIEnvService/"
+        - name: SAPI_MAIN_ENV_SECRET
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-app, key: DI_secretKey}}
+        # administrator seeded on first start of a fresh database
+        - name: SAPI_ADMIN_USER_EMAIL
+          value: {{ .Values.ui.adminEmail | quote }}
+        - name: SAPI_ADMIN_USER_PASSWORD
+          valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-ligadata-ui-users, key: admin}}
+        ports:
+        - {containerPort: 8081}
+        readinessProbe:
+          httpGet: {path: {{ .Values.ui.healthPath | quote }}, port: 8081}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: {path: {{ .Values.ui.healthPath | quote }}, port: 8081}
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          failureThreshold: 5
+        resources:
+{{ toYaml .Values.resources.ui | indent 10 }}
+        volumeMounts:
+        - {name: flare-data, mountPath: /opt/Flare4/UI/config, subPath: uiconfig}
+        - {name: flare-data, mountPath: /opt/Flare4/UI/flare_storage, subPath: uistorage}
+        - {name: flare-data, mountPath: /opt/Flare4/UI/logs, subPath: logs/ui}
+      volumes:
+{{ include "flare.sharedVolumes" $ctx | indent 6 }}

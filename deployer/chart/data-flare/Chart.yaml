@@ -1,0 +1,11 @@
+apiVersion: v2
+name: data-flare
+description: LigaData Data Flare - telecom-grade data integration and mediation platform on GKE
+type: application
+version: "4.1"
+appVersion: "4.1.0"
+home: https://www.ligadata.com
+keywords: [ligadata, data-flare, data-integration, mediation, telecom, cdr, asn1, etl]
+maintainers:
+  - name: LigaData
+    email: support@ligadata.com

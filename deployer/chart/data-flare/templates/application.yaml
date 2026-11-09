@@ -1,0 +1,76 @@
+{{- /* The Application resource Google Cloud Marketplace requires: groups every resource of this
+       instance (via the app.kubernetes.io/name label) and shows status and notes in the console. */ -}}
+apiVersion: app.k8s.io/v1beta1
+kind: Application
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "flare.labels" . | indent 4 }}
+  annotations:
+    marketplace.cloud.google.com/deploy-info: '{"partner_id": {{ .Values.marketplace.partnerId | quote }}, "product_id": {{ .Values.marketplace.productId | quote }}, "partner_name": "LigaData"}'
+spec:
+  descriptor:
+    type: Data Flare
+    version: {{ .Chart.AppVersion | quote }}
+    description: >-
+      Governed, real-time data integration: self-service pipelines in a compiled DSL with exactly-once
+      processing, telecom record decoding, lineage and approval workflow. This instance installs the
+      control plane (web UI, REST API, environment service), a built-in engine and a ready-to-use
+      "{{ .Values.environment.name }}" environment for pipelines.
+    maintainers:
+    - name: LigaData
+      url: https://www.ligadata.com
+    links:
+    - description: User guide
+      url: https://www.ligadata.com/docs/data-flare-gke
+    - description: Product page
+      url: https://www.ligadata.com/products/data-flare
+    notes: |-
+      # Data Flare {{ .Chart.AppVersion }}
+
+      **Web UI** (path `/dataflare`):
+      {{- if .Values.ui.ingress.enabled }}
+      the external load balancer address appears on the Ingress after a few minutes:
+      `kubectl -n {{ .Release.Namespace }} get ingress {{ .Release.Name }}-ui`
+      {{- else }}
+      internal only; from your workstation run
+      `kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-flare4-ui 8080:{{ .Values.ui.service.port }}`
+      and open http://localhost:8080/dataflare/
+      {{- end }}
+
+      **Logins** (passwords are in Secret `{{ .Release.Name }}-ligadata-ui-users`):
+      - administrator `{{ .Values.ui.adminEmail }}`:
+        `kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-ligadata-ui-users -o jsonpath='{.data.admin}' | base64 -d`
+      - pipeline user `{{ .Values.users.pipelineUser.email }}` (role DataEngL1, runs pipelines):
+        `kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-ligadata-ui-users -o jsonpath='{.data.pipelineUser}' | base64 -d`
+
+      **Environment** `{{ .Values.environment.name }}` is registered in the UI by the setup job
+      (`kubectl -n {{ .Release.Namespace }} logs job/{{ .Release.Name }}-setup`). Pipelines are deployed to it, not to the built-in Main Env.
+
+      **Licence**: {{ if .Values.license.p7sBase64 }}installed.{{ else }}not installed yet; pipelines stay blocked until a licence issued for this cluster is
+      installed (see the user guide). Send LigaData the cluster identity:
+      `kubectl get ns kube-system -o jsonpath='{.metadata.uid}'`{{ end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}
+  addOwnerRef: true
+  componentKinds:
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: StatefulSet
+  - group: batch
+    kind: Job
+  - group: ""
+    kind: Service
+  - group: ""
+    kind: Secret
+  - group: ""
+    kind: ConfigMap
+  - group: ""
+    kind: PersistentVolumeClaim
+{{- if .Values.ui.ingress.enabled }}
+  - group: networking.k8s.io
+    kind: Ingress
+{{- end }}
