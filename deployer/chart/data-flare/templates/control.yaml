@@ -18,12 +18,12 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-redis
-{{ include "flare.podLabels" . | indent 8 }}
+{{ include "flare.podLabels" $ctx | indent 8 }}
     spec:
       serviceAccountName: {{ include "flare.sa" . }}
       terminationGracePeriodSeconds: 30
 {{ include "flare.pullSecrets" . | indent 6 }}
-{{ include "flare.scheduling" . | indent 6 }}
+{{ include "flare.scheduling" $ctx | indent 6 }}
       initContainers:
 {{ include "flare.seedInit" $ctx | indent 6 }}
       containers:
@@ -61,14 +61,14 @@ spec:
     metadata:
       labels:
         service: {{ .Release.Name }}-flaredis
-{{ include "flare.podLabels" . | indent 8 }}
+{{ include "flare.podLabels" $ctx | indent 8 }}
     spec:
       serviceAccountName: {{ include "flare.sa" . }}
       securityContext:
         fsGroup: 1000
       terminationGracePeriodSeconds: 30
 {{ include "flare.pullSecrets" . | indent 6 }}
-{{ include "flare.scheduling" . | indent 6 }}
+{{ include "flare.scheduling" $ctx | indent 6 }}
       initContainers:
 {{ include "flare.seedInit" $ctx | indent 6 }}
       containers:
@@ -125,14 +125,14 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-flare4-ui
-{{ include "flare.podLabels" . | indent 8 }}
+{{ include "flare.podLabels" $ctx | indent 8 }}
     spec:
       serviceAccountName: {{ include "flare.sa" . }}
       securityContext:
         fsGroup: 1000
       terminationGracePeriodSeconds: 30
 {{ include "flare.pullSecrets" . | indent 6 }}
-{{ include "flare.scheduling" . | indent 6 }}
+{{ include "flare.scheduling" $ctx | indent 6 }}
       initContainers:
 {{ include "flare.seedInit" $ctx | indent 6 }}
       # the UI exits if the environment service is not answering at start-up; wait for it

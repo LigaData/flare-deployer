@@ -42,12 +42,18 @@ marketplace:
 
 timezone: UTC
 
-# Shared storage: one ReadWriteMany volume holds every Flare directory (config, libraries, landing
-# zone, logs, indexer data, UI storage, Redis). On GKE the standard-rwx class provisions a Filestore
-# share (Basic HDD, 1 TiB minimum); an existing RWX claim can be used instead.
+# Shared storage: one volume per engine (control plane, each environment) holds every Flare directory
+# (config, libraries, landing zone, logs, indexer data, UI storage, Redis).
+#   ReadWriteOnce (default): a block disk (GKE standard-rwo / premium-rwo, present on every cluster).
+#     The pods that share a volume are co-scheduled on one node (required pod affinity), so each
+#     engine runs on a single node; fine for evaluation and small deployments.
+#   ReadWriteMany: a file share (GKE Filestore classes standard-rwx / premium-rwx / enterprise-rwx,
+#     Filestore CSI driver required; Basic shares are 1 TiB minimum) or an NFS provisioner. Pods
+#     spread across nodes; use this for production and when scaling workers out.
 storage:
-  className: standard-rwx
-  size: 1Ti
+  className: standard-rwo
+  accessMode: ReadWriteOnce
+  size: 100Gi
 
 # Metadata database (pipelines, users, roles, environments, licences).
 # internal=true runs Postgres 16 in the namespace on a ReadWriteOnce disk.
@@ -143,20 +149,23 @@ resources:
   redis:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: 500m, memory: 512Mi}
+  # Requests are an evaluation footprint: the control plane (about 2 vCPU, 6 GiB) and one environment
+  # (about 1.5 vCPU, 4.5 GiB) each fit on a 4-vCPU, 16 GiB node. Limits leave room for the heap sizes in
+  # javaOpts; raise the requests for production so the pods are guaranteed their heap.
   flaredis:
-    requests: {cpu: 250m, memory: 1Gi}
+    requests: {cpu: 250m, memory: 768Mi}
     limits: {cpu: "2", memory: 3Gi}
   flaredriver:
-    requests: {cpu: 500m, memory: 2Gi}
+    requests: {cpu: 500m, memory: 1Gi}
     limits: {cpu: "2", memory: 4Gi}
   disworker:
-    requests: {cpu: "1", memory: 4Gi}
+    requests: {cpu: 500m, memory: 2Gi}
     limits: {cpu: "4", memory: 8Gi}
   disindexer:
-    requests: {cpu: 500m, memory: 3Gi}
+    requests: {cpu: 500m, memory: 1536Mi}
     limits: {cpu: "3", memory: 7Gi}
   ui:
-    requests: {cpu: 250m, memory: 1Gi}
+    requests: {cpu: 250m, memory: 768Mi}
     limits: {cpu: "1", memory: 3Gi}
   postgres:
     requests: {cpu: 100m, memory: 256Mi}

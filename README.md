@@ -25,7 +25,7 @@ With the [marketplace tools](https://github.com/GoogleCloudPlatform/marketplace-
 Or with Helm directly (images and generated secrets then come from values; see `values.yaml`):
 
     helm install data-flare deployer/chart/data-flare -n flare4 --create-namespace \
-      --set serviceAccount=default --set storage.className=standard-rwx
+      --set serviceAccount=default
 
 ## Images
 

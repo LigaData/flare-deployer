@@ -3,7 +3,7 @@
 properties:
   storage.className:
     type: string
-    default: standard-rwx
+    default: standard-rwo
   users.pipelineUser.email:
     type: string
     default: dataeng1@example.com
