@@ -138,3 +138,16 @@ affinity:
           flare.ligadata.com/volume: {{ .pvcName }}
 {{- end }}
 {{- end }}
+
+{{/* The web UI requires at least one upper-case letter, one lower-case letter, one digit and one special
+     character. A GENERATED_PASSWORD from the deployer is random and may miss a class, so a supplied value
+     gets a character appended for each class it lacks (deterministic: the Secret is stable across upgrades).
+     usage: include "flare.policyPassword" <password> */}}
+{{- define "flare.policyPassword" -}}
+{{- $p := toString . -}}
+{{- if not (regexMatch "[A-Z]" $p) }}{{ $p = printf "%sQ" $p }}{{ end -}}
+{{- if not (regexMatch "[a-z]" $p) }}{{ $p = printf "%sx" $p }}{{ end -}}
+{{- if not (regexMatch "[0-9]" $p) }}{{ $p = printf "%s7" $p }}{{ end -}}
+{{- if not (regexMatch "[^A-Za-z0-9]" $p) }}{{ $p = printf "%s!" $p }}{{ end -}}
+{{- $p -}}
+{{- end -}}

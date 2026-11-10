@@ -64,6 +64,9 @@ def until_ok(what, fn, accept=lambda d: False):
         d = fn()
         if ok(d) or accept(d):
             return d
+        code = int(d.get("httpCode") or 0)
+        if 400 <= code < 500 and code not in (401, 403, 408, 429):   # the request itself is rejected; waiting will not help
+            sys.exit("%s rejected by the web UI (HTTP %d): %s" % (what, code, json.dumps(d)[:300]))
         print(what, "not accepted yet:", str(d)[:160])
         if time.time() > DEADLINE:
             sys.exit("%s failed before the deadline: %s" % (what, json.dumps(d)[:300]))
