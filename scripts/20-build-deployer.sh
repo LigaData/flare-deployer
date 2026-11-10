@@ -15,4 +15,7 @@ helm lint "$WORK/chart/data-flare"
 docker build --platform linux/amd64 --provenance=false --sbom=false -t "$DEPLOYER:$MP_TRACK" -t "$DEPLOYER:$MP_VERSION" "$WORK"
 docker push "$DEPLOYER:$MP_TRACK"; docker push "$DEPLOYER:$MP_VERSION"
 "$HERE/15-annotate-images.sh" deployer
+# schema v2 resolves every product image as <repo>/<name>:<publishedVersion>, so each version needs its tag on
+# the six product images too (a tag on the existing digest; no new manifest, nothing to re-annotate)
+for n in dismain disworker flare4ui seed redis postgres; do crane tag "$DEST/$n:$MP_TRACK" "$MP_VERSION" >/dev/null && echo "  $n tagged $MP_VERSION"; done
 echo "deployer: $DEPLOYER   (paste in Producer Portal > Specify deployment container images; tag $MP_TRACK)"
