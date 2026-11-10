@@ -139,15 +139,17 @@ affinity:
 {{- end }}
 {{- end }}
 
-{{/* The web UI requires at least one upper-case letter, one lower-case letter, one digit and one special
-     character. A GENERATED_PASSWORD from the deployer is random and may miss a class, so a supplied value
-     gets a character appended for each class it lacks (deterministic: the Secret is stable across upgrades).
-     usage: include "flare.policyPassword" <password> */}}
+{{/* The web UI (User.scala) accepts a password only when it matches
+     ^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=_!*])(?=\S+$).{8,}$ : the special character must come
+     from that exact set. A GENERATED_PASSWORD from the deployer is random and may miss a class or use another
+     symbol, so a supplied value has whitespace removed and a character appended for each class it lacks
+     (deterministic: the Secret is stable across upgrades). usage: include "flare.policyPassword" <password> */}}
 {{- define "flare.policyPassword" -}}
-{{- $p := toString . -}}
+{{- $p := regexReplaceAll "\\s" (toString .) "" -}}
 {{- if not (regexMatch "[A-Z]" $p) }}{{ $p = printf "%sQ" $p }}{{ end -}}
 {{- if not (regexMatch "[a-z]" $p) }}{{ $p = printf "%sx" $p }}{{ end -}}
 {{- if not (regexMatch "[0-9]" $p) }}{{ $p = printf "%s7" $p }}{{ end -}}
-{{- if not (regexMatch "[^A-Za-z0-9]" $p) }}{{ $p = printf "%s!" $p }}{{ end -}}
+{{- if not (regexMatch "[@#$%^&+=_!*]" $p) }}{{ $p = printf "%s!" $p }}{{ end -}}
+{{- if lt (len $p) 8 }}{{ $p = printf "%sQx7!Qx7!" $p }}{{ end -}}
 {{- $p -}}
 {{- end -}}
