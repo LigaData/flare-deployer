@@ -11,6 +11,8 @@ for name in "$@"; do
   new=${new##*@}
   for t in "$MP_TRACK" "$MP_VERSION"; do crane tag "$DEST/$name@$new" "$t"; done
   echo "  $name annotated -> $new"
-  gcloud artifacts docker images list "$DEST/$name" --include-tags --format="value(version,tags)" 2>/dev/null \
-    | awk '$2==""{print $1}' | while read -r old; do gcloud artifacts docker images delete "$DEST/$name@$old" --quiet >/dev/null 2>&1 || true; done
+  # Remove only the un-annotated manifest this run replaced. Never prune other untagged manifests:
+  # Producer Portal pins a version to the digest it resolved at submission, and deleting that digest
+  # breaks validation with "Image not found".
+  [ "$new" != "$digest" ] && gcloud artifacts docker images delete "$DEST/$name@$digest" --quiet >/dev/null 2>&1 || true
 done
