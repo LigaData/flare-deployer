@@ -264,7 +264,7 @@ spec:
   - {name: translog, port: 7798, targetPort: 7798}
 {{- end }}
 
-{{/* shared ReadWriteMany claim of one engine */}}
+{{/* shared claim of one engine (storage.accessMode: ReadWriteOnce = one node per engine, ReadWriteMany = file share) */}}
 {{- define "flare.pvcResource" -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -273,7 +273,7 @@ metadata:
   labels:
 {{ include "flare.labels" . | indent 4 }}
 spec:
-  accessModes: [ReadWriteMany]
+  accessModes: [{{ .Values.storage.accessMode | default "ReadWriteOnce" }}]
   storageClassName: {{ .Values.storage.className | quote }}
   resources:
     requests:

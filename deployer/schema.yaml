@@ -76,20 +76,33 @@ properties:
                 resources: ["namespaces"]
                 verbs: ["get", "list"]
 
+  storage.accessMode:
+    type: string
+    title: Shared volume access mode
+    description: >-
+      ReadWriteOnce uses a block disk and runs each engine (control plane, environment) on a
+      single node; works on every GKE cluster and suits evaluation. ReadWriteMany uses a file
+      share (Filestore CSI driver, or an NFS provisioner) and lets the pods spread across nodes;
+      use it for production. The storage class below must match the mode.
+    default: ReadWriteOnce
+    enum:
+      - ReadWriteOnce
+      - ReadWriteMany
   storage.className:
     type: string
-    title: Storage class for the shared volume (ReadWriteMany)
+    title: Storage class for the shared volume
     description: >-
-      Data Flare shares configuration and pipeline data between its pods, so this must be a
-      ReadWriteMany class: on GKE a Filestore class (standard-rwx, premium-rwx, enterprise-rwx;
-      requires the Filestore CSI driver) or an NFS provisioner class. Block-storage classes
-      (standard-rwo, premium-rwo) will not work.
-    default: standard-rwx
+      ReadWriteOnce: standard-rwo or premium-rwo (present on every GKE cluster). ReadWriteMany:
+      standard-rwx, premium-rwx or enterprise-rwx (Filestore CSI driver must be enabled on the
+      cluster) or an NFS provisioner class.
+    default: standard-rwo
   storage.size:
     type: string
-    title: Size of the shared volume
-    description: Filestore Basic shares start at 1Ti.
-    default: 1Ti
+    title: Size of the shared volume (one per engine)
+    description: >-
+      Two volumes are created with the defaults (control plane and the dev environment). Filestore
+      Basic shares are provisioned at 1Ti minimum whatever is requested.
+    default: 100Gi
 
   database.internal:
     type: boolean
@@ -129,7 +142,7 @@ properties:
     x-google-marketplace:
       type: GENERATED_PASSWORD
       generatedPassword: {length: 32, includeSymbols: false, base64: false}
-  environments.dev.secret:
+  environment.secret:
     type: string
     x-google-marketplace:
       type: GENERATED_PASSWORD
@@ -185,7 +198,8 @@ required:
 form:
   - widget: help
     description: >-
-      <p>Data Flare needs a <b>ReadWriteMany</b> storage class: enable the Filestore CSI driver on the
-      cluster (class <i>standard-rwx</i>) or install an NFS provisioner. After deployment, follow the
+      <p>The defaults deploy on any GKE cluster (block disks, one node per engine). For a production
+      deployment spread across nodes, enable the Filestore CSI driver and choose access mode
+      <i>ReadWriteMany</i> with class <i>standard-rwx</i>. After deployment, follow the
       <a href="https://www.ligadata.com/docs/data-flare-gke">user guide</a> to read the generated
       passwords, open the web UI and install your licence.</p>

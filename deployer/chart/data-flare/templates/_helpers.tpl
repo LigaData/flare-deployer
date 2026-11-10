@@ -11,6 +11,9 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 {{- define "flare.podLabels" -}}
 app.kubernetes.io/name: {{ .Release.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- with .pvcName }}
+flare.ligadata.com/volume: {{ . }}
+{{- end }}
 {{- if .Values.marketplace.solutionUrn }}
 goog-partner-solution: {{ .Values.marketplace.solutionUrn | quote }}
 {{- end }}
@@ -121,5 +124,17 @@ nodeSelector:
 {{- with .Values.tolerations }}
 tolerations:
 {{ toYaml . | indent 2 }}
+{{- end }}
+{{- /* a ReadWriteOnce block disk attaches to one node: every pod mounting the same claim must land
+       there. Required pod affinity on the volume label does that; the first pod of a group matches
+       its own labels, so it schedules anywhere. Needs the ctx dict (.pvcName). */ -}}
+{{- if and .pvcName (eq .Values.storage.accessMode "ReadWriteOnce") }}
+affinity:
+  podAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - topologyKey: kubernetes.io/hostname
+      labelSelector:
+        matchLabels:
+          flare.ligadata.com/volume: {{ .pvcName }}
 {{- end }}
 {{- end }}

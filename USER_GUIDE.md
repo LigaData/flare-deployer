@@ -9,9 +9,10 @@ below use `data-flare` as the instance name and `flare4` as the namespace.
 
 ## 1. Prerequisites
 
-- A GKE Standard or Autopilot cluster, x86 nodes, at least 3 x e2-standard-8 (24 vCPU, 96 GiB) for
-  the default sizing (control plane plus the `dev` environment), with the **Filestore CSI driver**
-  enabled (storage class `standard-rwx`) or another ReadWriteMany storage class.
+- A GKE Standard or Autopilot cluster with x86 nodes. The defaults (control plane plus the `dev`
+  environment, block-disk storage) fit on two 4-vCPU, 16 GiB nodes, for example 2 x e2-standard-4.
+  Each engine then runs on one node; see section 8 for the multi-node production layout, which
+  needs the **Filestore CSI driver** (storage class `standard-rwx`) or another ReadWriteMany class.
 - The Application CRD (installed once per cluster; the console does this for you, or run
   `kubectl apply -f "https://raw.githubusercontent.com/GoogleCloudPlatform/marketplace-k8s-app-tools/master/crd/app-crd.yaml"`).
 - A licence from LigaData (support@ligadata.com). The licence is bound to the cluster: send the
@@ -25,8 +26,9 @@ Open the listing, click **Configure**, choose the cluster and namespace, and fil
 |---|---|---|
 | App instance name | data-flare | prefix of every resource name |
 | Service account | create new | needs read access to namespaces (licence binding); created for you |
-| Storage class for the shared volume | standard-rwx | must be ReadWriteMany (Filestore or NFS); block classes fail |
-| Size of the shared volume | 1Ti | Filestore Basic minimum |
+| Shared volume access mode | ReadWriteOnce | ReadWriteOnce = block disk, one node per engine; ReadWriteMany = Filestore or NFS, pods spread across nodes |
+| Storage class for the shared volume | standard-rwo | must match the access mode: standard-rwo / premium-rwo, or standard-rwx / premium-rwx / enterprise-rwx |
+| Size of the shared volume | 100Gi | one volume per engine (two with the defaults); Filestore Basic rounds up to 1Ti |
 | Run PostgreSQL inside the cluster | on | off = enter your own PostgreSQL host (Cloud SQL private IP) |
 | Database name / user / password | flare4 / flare4 / generated | |
 | Web UI administrator password | generated | admin@ld.com |
@@ -134,9 +136,9 @@ designer or import an exported one (Pipelines > Import).
 
 ## 6. Backup and restore
 
-- **Shared volume** (`<release>-flare-data`, Filestore): configuration, libraries, landing zone,
-  indexer data, UI storage. Use Filestore backups
-  (`gcloud filestore backups create`) or snapshot the share on a schedule.
+- **Shared volumes** (`<release>-flare-data`, `<release>-dev-flare-data`): configuration, libraries,
+  landing zone, indexer data, UI storage. Block disks: schedule Persistent Disk snapshots
+  (`gcloud compute disks snapshot` or a resource policy). Filestore: `gcloud filestore backups create`.
 - **Metadata database:** internal Postgres: `kubectl -n flare4 exec deploy/postgres -- pg_dump -U flare4 flare4 > flare4.sql`;
   Cloud SQL: automated backups.
 - **Restore:** reinstall with `existing_claim` pointing at a claim restored from the backup, and
@@ -154,6 +156,13 @@ deployed pipelines, users and environments persist in the database and on the vo
   count in the UI.
 - Pod resources: Helm values under `resources.*` and `javaOpts.*` (heap sizes).
 - Nodes: GKE node pool autoscaling. Filestore capacity can be increased online.
+- Multi-node: with the default ReadWriteOnce storage every pod of an engine is pinned to one node
+  (pod affinity on the volume label), so more workers compete for that node. For production, enable the
+  Filestore CSI driver on the cluster and deploy with access mode **ReadWriteMany** and class
+  `standard-rwx` (or an NFS class); the pods then spread across the node pool. Changing the mode of
+  an existing deployment means a fresh install; export pipelines first.
+- Pod requests are an evaluation footprint; raise `resources.*` requests to the heap sizes in
+  `javaOpts.*` so production pods are guaranteed their memory.
 
 ## 9. Delete
 
