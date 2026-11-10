@@ -22,7 +22,7 @@ metadata:
   labels:
 {{ include "flare.labels" . | indent 4 }}
 spec:
-  backoffLimit: 3
+  backoffLimit: 10
   activeDeadlineSeconds: 3600
   template:
     metadata:
